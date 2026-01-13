@@ -25,11 +25,29 @@
     @media (max-width:560px){ .grid{grid-template-columns:1fr} }
 
     label{display:block; font-size:12px; font-weight:900; color:var(--muted); margin:0 0 6px 6px;}
+
+    /* input + nút dán */
+    .field{ position:relative; }
     input{
       width:100%; height:46px; border-radius:12px; border:1px solid var(--border);
-      padding:0 12px; font-size:15px; outline:none; background:#fff;
+      padding:0 44px 0 12px; font-size:15px; outline:none; background:#fff;
     }
     input:focus{border-color:rgba(25,118,210,.6)}
+    .paste-btn{
+      position:absolute;
+      right:8px; top:50%; transform:translateY(-50%);
+      height:32px; min-width:34px;
+      border-radius:10px;
+      border:1px solid rgba(15,23,42,.12);
+      background:#eef2f7;
+      font-weight:1000;
+      cursor:pointer;
+      padding:0 10px;
+      display:flex; align-items:center; justify-content:center;
+      -webkit-tap-highlight-color:transparent;
+    }
+    .paste-btn:active{ transform:translateY(-50%) scale(0.97); }
+
     .row{display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;}
     .btn{
       height:44px; border:none; border-radius:12px; font-weight:1000;
@@ -72,11 +90,17 @@
       <div class="grid">
         <div>
           <label>SKU / Barcode</label>
-          <input id="pSku" inputmode="numeric" placeholder="VD: 893..." />
+          <div class="field">
+            <input id="pSku" inputmode="numeric" placeholder="VD: 893..." />
+            <button class="paste-btn" type="button" data-paste="pSku" title="Dán nhanh">📋</button>
+          </div>
         </div>
         <div>
           <label>Tên sản phẩm</label>
-          <input id="pName" placeholder="Nhập tên..." />
+          <div class="field">
+            <input id="pName" placeholder="Nhập tên..." />
+            <button class="paste-btn" type="button" data-paste="pName" title="Dán nhanh">📋</button>
+          </div>
         </div>
         <div>
           <label>&nbsp;</label>
@@ -87,7 +111,7 @@
         <button id="pExport" class="btn primary" type="button">📤 Xuất CSV sản phẩm</button>
         <button id="pClear" class="btn danger" type="button">🧹 Xoá hết</button>
       </div>
-      <div class="hint">Không cho trùng SKU. Nếu nhập lại cùng SKU → tự cập nhật tên.</div>
+      <div class="hint">Không cho trùng SKU. Nếu nhập lại cùng SKU → tự cập nhật tên. (Có thể dán dạng: <b>SKU, Tên</b> để tự tách)</div>
       <div id="pTableWrap"></div>
     </div>
 
@@ -95,15 +119,24 @@
       <div class="grid">
         <div>
           <label>SKU / Barcode</label>
-          <input id="cSku" inputmode="numeric" placeholder="VD: 893..." />
+          <div class="field">
+            <input id="cSku" inputmode="numeric" placeholder="VD: 893..." />
+            <button class="paste-btn" type="button" data-paste="cSku" title="Dán nhanh">📋</button>
+          </div>
         </div>
         <div>
           <label>Tên sản phẩm</label>
-          <input id="cName" placeholder="Nhập tên..." />
+          <div class="field">
+            <input id="cName" placeholder="Nhập tên..." />
+            <button class="paste-btn" type="button" data-paste="cName" title="Dán nhanh">📋</button>
+          </div>
         </div>
         <div>
           <label>HSD</label>
-          <input id="cHsd" type="date" />
+          <div class="field">
+            <input id="cHsd" type="date" />
+            <button class="paste-btn" type="button" data-paste="cHsd" title="Dán nhanh">📋</button>
+          </div>
         </div>
       </div>
       <div class="row">
@@ -111,7 +144,7 @@
         <button id="cExport" class="btn primary" type="button">📤 Xuất CSV đã kiểm</button>
         <button id="cClear" class="btn danger" type="button">🧹 Xoá hết</button>
       </div>
-      <div class="hint">Không cho trùng theo (SKU + HSD). Nếu nhập lại y hệt → tự cập nhật tên.</div>
+      <div class="hint">Không cho trùng theo (SKU + HSD). Nếu nhập lại y hệt → tự cập nhật tên. (Có thể dán: <b>SKU, Tên, HSD</b>)</div>
       <div id="cTableWrap"></div>
     </div>
   </div>
@@ -171,9 +204,141 @@
     setTimeout(()=> URL.revokeObjectURL(url), 1200);
   }
 
+  // ===== Smart parse from clipboard =====
+  function splitSmart(text){
+    let t = trim(text).replace(/\r/g,'').split('\n').join(' ').trim();
+    if(!t) return [];
+
+    // Ưu tiên tab trước (copy từ sheet)
+    if(t.includes('\t')) return t.split('\t').map(x=>trim(x)).filter(Boolean);
+
+    // Nếu có dấu phẩy
+    if(t.includes(',')) return t.split(',').map(x=>trim(x)).filter(Boolean);
+
+    // Nếu có ; (csv kiểu VN)
+    if(t.includes(';')) return t.split(';').map(x=>trim(x)).filter(Boolean);
+
+    // Nếu có nhiều khoảng trắng -> tách nhẹ (2+ spaces)
+    if(/\s{2,}/.test(t)) return t.split(/\s{2,}/).map(x=>trim(x)).filter(Boolean);
+
+    return [t];
+  }
+
+  function normalizeDateToISO(v){
+    v = trim(v);
+    if(!v) return '';
+    if(/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+
+    // dd/mm/yyyy
+    let m = v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if(m){
+      const dd=String(m[1]).padStart(2,'0');
+      const mm=String(m[2]).padStart(2,'0');
+      const yy=m[3];
+      return `${yy}-${mm}-${dd}`;
+    }
+    // yyyy/mm/dd
+    m = v.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+    if(m){
+      const yy=m[1];
+      const mm=String(m[2]).padStart(2,'0');
+      const dd=String(m[3]).padStart(2,'0');
+      return `${yy}-${mm}-${dd}`;
+    }
+    const d = new Date(v);
+    if(!isNaN(d.getTime())){
+      const yy=d.getFullYear();
+      const mm=String(d.getMonth()+1).padStart(2,'0');
+      const dd=String(d.getDate()).padStart(2,'0');
+      return `${yy}-${mm}-${dd}`;
+    }
+    return '';
+  }
+
+  async function readClipboardText(){
+    try{
+      const t = await navigator.clipboard.readText();
+      return trim(t);
+    }catch{
+      toast('⚠️ Clipboard bị chặn (hãy bấm nút 📋)');
+      return '';
+    }
+  }
+
+  // Dán vào 1 ô
+  async function pasteInto(inputId){
+    const el = $(inputId);
+    if(!el) return;
+    const t = await readClipboardText();
+    if(!t) return;
+
+    // Nếu ô là date, cố normalize
+    if(el.type === 'date'){
+      const iso = normalizeDateToISO(t);
+      if(validISODate(iso)){
+        el.value = iso;
+        toast('📋 Đã dán HSD');
+      }else{
+        toast('⚠️ HSD không hợp lệ');
+      }
+      return;
+    }
+
+    el.value = t;
+    toast('📋 Đã dán');
+    el.focus();
+  }
+
+  // Dán thông minh theo form (tự điền nhiều ô)
+  async function smartPasteProducts(){
+    const t = await readClipboardText();
+    if(!t) return;
+    const parts = splitSmart(t);
+    // 기대: SKU, NAME
+    if(parts.length >= 2){
+      $('pSku').value = parts[0] || '';
+      $('pName').value = parts.slice(1).join(' ') || '';
+      toast('📋 Đã dán SKU + Tên');
+      $('pName').focus();
+    }else{
+      $('pSku').value = parts[0] || t;
+      toast('📋 Đã dán SKU');
+      $('pName').focus();
+    }
+  }
+
+  async function smartPasteChecked(){
+    const t = await readClipboardText();
+    if(!t) return;
+    const parts = splitSmart(t);
+    // 기대: SKU, NAME, HSD
+    if(parts.length >= 3){
+      $('cSku').value = parts[0] || '';
+      $('cName').value = parts[1] || '';
+      const iso = normalizeDateToISO(parts[2] || '');
+      if(validISODate(iso)) $('cHsd').value = iso;
+      toast('📋 Đã dán SKU + Tên + HSD');
+      $('cHsd').focus();
+      return;
+    }
+    if(parts.length === 2){
+      $('cSku').value = parts[0] || '';
+      $('cName').value = parts[1] || '';
+      toast('📋 Đã dán SKU + Tên');
+      $('cHsd').focus();
+      return;
+    }
+    $('cSku').value = parts[0] || t;
+    toast('📋 Đã dán SKU');
+    $('cName').focus();
+  }
+
+  // (Tuỳ chọn) Dán tự động khi focus (OFF mặc định)
+  const AUTO_PASTE_ON_FOCUS = false;
+
   // ===== State =====
-  let products = load(KEY_PRODUCTS, []); // [{sku,name}]
-  let checked  = load(KEY_CHECKED,  []); // [{sku,name,hsd}]
+  let products = load(KEY_PRODUCTS, []);
+  let checked  = load(KEY_CHECKED,  []);
 
   // ===== Tabs =====
   const tabProducts = $('tabProducts');
@@ -192,7 +357,7 @@
   tabProducts.onclick = () => setTab('p');
   tabChecked.onclick  = () => setTab('c');
 
-  // ===== Render tables =====
+  // ===== Render =====
   function renderProducts(){
     const wrap = $('pTableWrap');
     if(products.length === 0){
@@ -210,7 +375,7 @@
           </tr>
         </thead>
         <tbody>
-          ${rows.map((r,i)=>`
+          ${rows.map(r=>`
             <tr>
               <td class="mono">${r.sku}</td>
               <td>${r.name || ''}</td>
@@ -284,7 +449,7 @@
     const sku = trim($('pSku').value);
     const name = trim($('pName').value);
     if(!sku){ toast('⚠️ Nhập SKU'); $('pSku').focus(); return; }
-    // gộp theo sku
+
     const ex = products.find(x => x.sku === sku);
     if(ex){
       ex.name = name || ex.name || '';
@@ -299,7 +464,6 @@
     render();
   };
 
-  // ===== Export product CSV =====
   $('pExport').onclick = () => {
     const rows = [...products].sort((a,b)=> a.sku.localeCompare(b.sku));
     downloadCSV('danh_sach_san_pham.csv', ['sku','name'], rows);
@@ -320,20 +484,20 @@
     const name = trim($('cName').value);
     const hsd = trim($('cHsd').value);
     if(!sku){ toast('⚠️ Nhập SKU'); $('cSku').focus(); return; }
-    if(!validISODate(hsd)){ toast('⚠️ Chọn HSD'); $('cHsd').focus(); return; }
 
-    // gộp theo (sku + hsd)
-    const ex = checked.find(x => x.sku === sku && x.hsd === hsd);
+    const iso = normalizeDateToISO(hsd);
+    if(!validISODate(iso)){ toast('⚠️ Chọn HSD'); $('cHsd').focus(); return; }
+
+    const ex = checked.find(x => x.sku === sku && x.hsd === iso);
     if(ex){
       ex.name = name || ex.name || '';
       toast('✅ Đã cập nhật dòng');
     }else{
-      checked.push({sku, name, hsd});
+      checked.push({sku, name, hsd: iso});
       toast('✅ Đã thêm');
     }
     save(KEY_CHECKED, checked);
 
-    // tiện iOS: giữ sku nếu muốn nhập nhiều hsd? -> ở đây reset hết cho sạch
     $('cSku').value=''; $('cName').value=''; $('cHsd').value='';
     $('cSku').focus();
     render();
@@ -352,6 +516,36 @@
     render();
     toast('🧹 Đã xoá');
   };
+
+  // ===== Paste buttons =====
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-paste]');
+    if(!b) return;
+    const id = b.getAttribute('data-paste');
+
+    // Dán thông minh cho form:
+    if(id === 'pSku') return smartPasteProducts();
+    if(id === 'cSku') return smartPasteChecked();
+
+    // Dán thường cho ô còn lại
+    return pasteInto(id);
+  });
+
+  // ===== Optional: auto paste on focus =====
+  if(AUTO_PASTE_ON_FOCUS){
+    ['pSku','pName','cSku','cName','cHsd'].forEach(id=>{
+      const el = $(id);
+      if(!el) return;
+      el.addEventListener('focus', async ()=>{
+        // chỉ auto paste nếu ô đang rỗng để tránh ghi đè
+        if(trim(el.value)) return;
+        // auto paste: cSku/pSku dùng smart
+        if(id === 'pSku') return smartPasteProducts();
+        if(id === 'cSku') return smartPasteChecked();
+        return pasteInto(id);
+      });
+    });
+  }
 
   // init
   render();
